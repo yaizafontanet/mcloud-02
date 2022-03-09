@@ -1,42 +1,94 @@
-#Instancia de Wordpress                                                             
-resource "aws_key_pair" "keypair" {                                                               
-    key_name    = "joc-key-pair"                                                                      
-    public_key  = "${file("joc-key-pair.pub")}"                                                                                                                                                                   
-}                                                                                                                                                                                                                                                                                                                       
+resource "aws_iam_role" "ecs_task_execution_role" {
+  name = "role-name"
+ 
+  assume_role_policy = <<EOF
+{
+ "Version": "2012-10-17",
+ "Statement": [
+   {
+     "Action": "sts:AssumeRole",
+     "Principal": {
+       "Service": "ecs-tasks.amazonaws.com"
+     },
+     "Effect": "Allow",
+     "Sid": ""
+   }
+ ]
+}
+EOF
+}
 
-resource "aws_instance" "WordPress" {                                                                     
-    depends_on = [aws_internet_gateway.public_internet_gw]                                                  
-    ami           = "ami-04ad2567c9e3d7893"                                                                 
-    instance_type = "t2.micro"                                                                              
-    key_name = aws_key_pair.keypair.key_name                                                                
-    subnet_id = aws_subnet.public_subnet.id                                                                 
-    vpc_security_group_ids = [aws_security_group.SG_public_subnet.id]                                       
-    user_data = "${file("script.sh")}"                                                                      
-    tags = {                                                                                                   
-        Name = "WEB"                                                                                         
-    }                                                                                                                                                                                                              
-    provisioner "local-exec" {                                                                               
-        command = "echo ${aws_instance.WordPress.public_ip} > public.txt"                                    
-    }                                                                                                                                                                                                              
-}                                                                                                                                                                                                               
+resource "aws_iam_role" "ecs_task_role" {
+  name = "role-name-task"
+ 
+  assume_role_policy = <<EOF
+{
+ "Version": "2012-10-17",
+ "Statement": [
+   {
+     "Action": "sts:AssumeRole",
+     "Principal": {
+       "Service": "ecs-tasks.amazonaws.com"
+     },
+     "Effect": "Allow",
+     "Sid": ""
+   }
+ ]
+}
+EOF
+}
+ 
+resource "aws_iam_role_policy_attachment" "ecs-task-execution-role-policy-attachment" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
 
-#Instancia de la BBDD - RDS                                                                            
-resource "aws_db_instance" "DataBase" {                                                                   
-    allocated_storage = 20                                                                               
-    max_allocated_storage = 100                                                                             
-    storage_type = "gp2"                                                                            
-    engine = "mysql"                                                                          
-    engine_version = "5.7.22"                                                                         
-    instance_class = "db.t2.micro"                                                                    
-    name = "mcloud"                                                                           
-    username = "yaiza"                                                                          
-    password = "yaiza12345"                                                                     
-    parameter_group_name = "default.mysql5.7"                                                               
-    publicly_accessible = false                                                                             
-    db_subnet_group_name = aws_db_subnet_group.db_subnet.name                                               
-    vpc_security_group_ids = [aws_security_group.SG_private_subnet_.id]                                     
-    skip_final_snapshot = true                                                                                                                                                                                    
-    provisioner "local-exec" {                                                                                
-        command = "echo ${aws_db_instance.DataBase.endpoint} > BBDD-RDS.txt"                                       
-    }                                                                                                                                                                                                           
-} 
+resource "aws_iam_role_policy_attachment" "task_s3" {
+  role       = "${aws_iam_role.ecs_task_role.name}"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_ecs_task_definition" "definition" {}
+
+resource "aws_ecs_task_definition" "definition" {
+  family                   = "task_definition_name"
+  task_role_arn            = "${var.ecs_task_role}"
+  execution_role_arn       = "${var.ecs_task_execution_role}"
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "1024"
+  requires_compatibilities = ["FARGATE"]
+}
+
+container_definitions = <<DEFINITION
+[
+  {
+    "image": "${var.account}.dkr.ecr.eu-west-1.amazonaws.com/project:latest",
+    "name": "project-container",
+    "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-region" : "eu-east-1",
+                    "awslogs-group" : "stream-to-log-fluentd",
+                    "awslogs-stream-prefix" : "project"
+                }
+            },
+    "secrets": [{
+        "name": "secret_variable_name",
+        "valueFrom": "arn:aws:ssm:region:acount:parameter/parameter_name"
+    }],           
+    "environment": [
+            {
+                "name": "bucketName",
+                "value": "${var.bucket_name}"
+            },
+            {
+                "name": "folder",
+                "value": "${var.folder}"
+            }
+        ]
+    }
+  
+]
+DEFINITION
+}
