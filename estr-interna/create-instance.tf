@@ -13,7 +13,7 @@ resource "aws_instance" "WordPress" {
     vpc_security_group_ids = [aws_security_group.SG_public_subnet.id]                                       
     user_data = "${file("script.sh")}"                                                                      
     tags = {                                                                                                   
-        Name = "WEB"                                                                                         
+        Name = "demo_state_ec2-${count.index}"                                                                                         
     }                                                                                                                                                                                                              
     provisioner "local-exec" {                                                                               
         command = "echo ${aws_instance.WordPress.public_ip} > public.txt"                                    
@@ -39,4 +39,4 @@ resource "aws_db_instance" "DataBase" {
     provisioner "local-exec" {                                                                                
         command = "echo ${aws_db_instance.DataBase.endpoint} > BBDD-RDS.txt"                                       
     }                                                                                                                                                                                                           
-} 
+}
